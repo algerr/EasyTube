@@ -20,7 +20,7 @@
         {% endfor %}
       </div>
       
-      <button type="submit">Download</button>
+      <button type="submit" class="primary-button">Download</button>
     {% else %}
       <p>No download options available for this video. Please try another video.</p>
       <a href="{{ url_for('index') }}" class="back-button">Go Back</a>

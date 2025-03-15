@@ -79,6 +79,29 @@
       transform: translateY(-2px);
       box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
     }
+    
+    /* Primary button - more prominent */
+    .primary-button {
+      background: linear-gradient(135deg, #6e48aa, #9d50bb);
+      font-size: 17px;
+      padding: 14px 28px;
+      margin-top: 10px;
+    }
+    .primary-button:hover {
+      background: linear-gradient(135deg, #7e58ba, #ad60cb);
+      box-shadow: 0 6px 15px rgba(110, 72, 170, 0.4);
+    }
+    
+    /* Secondary button - less prominent */
+    .secondary-button {
+      background: linear-gradient(135deg, #757F9A, #D7DDE8);
+      color: #333;
+    }
+    .secondary-button:hover {
+      background: linear-gradient(135deg, #8590AB, #E8EEF9);
+      box-shadow: 0 6px 15px rgba(117, 127, 154, 0.4);
+    }
+    
     input[type="text"] {
       padding: 12px;
       width: 100%;
@@ -308,7 +331,7 @@
       left: 50%;
       transform: translateX(-50%);
       padding: 10px 20px;
-      background: linear-gradient(135deg, #333, #444);
+      background: linear-gradient(135deg, #24292e, #444);
       color: white;
       border: none;
       border-radius: 6px;
@@ -324,7 +347,7 @@
     }
     
     .github-button:hover {
-      background: linear-gradient(135deg, #444, #555);
+      background: linear-gradient(135deg, #2f363d, #555);
       transform: translateX(-50%) translateY(-2px);
       box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
     }
@@ -361,19 +384,19 @@
     }
     
     .radio-option input[type="radio"]:checked + label {
-      background: linear-gradient(135deg, #6e48aa, #9d50bb);
-      color: white;
-      border-color: transparent;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      border: 2px solid #9d50bb;
+      box-shadow: 0 0 8px rgba(157, 80, 187, 0.5);
     }
     
     .radio-option label:hover {
-      background: rgba(110, 72, 170, 0.2);
+      background: rgba(255, 255, 255, 0.8);
       transform: translateY(-2px);
     }
     
     .radio-option input[type="radio"]:checked + label:hover {
-      background: linear-gradient(135deg, #7e58ba, #ad60cb);
+      background: rgba(255, 255, 255, 1);
     }
   </style>
 </head>
