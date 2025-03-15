@@ -1,0 +1,29 @@
+<!-- templates/select_format.html -->
+{% extends "layout.html" %}
+
+{% block title %}Select Quality - {{ title }}{% endblock %}
+
+{% block content %}
+  <form method="POST" action="{{ url_for('download') }}">
+    <h2>{{ title }}</h2>
+    
+    {% if choices|length > 0 %}
+      <p>Select your preferred quality option:</p>
+      <p class="help-text">Higher quality means better video/audio but larger file size.</p>
+      
+      <div class="option-container">
+        {% for choice in choices %}
+          <div class="option-item">
+            <input type="radio" name="format" id="format-{{ loop.index }}" value="{{ choice.id }}" {% if loop.first %}checked{% endif %} required>
+            <label for="format-{{ loop.index }}">{{ choice.label }}</label>
+          </div>
+        {% endfor %}
+      </div>
+      
+      <button type="submit">Download</button>
+    {% else %}
+      <p>No download options available for this video. Please try another video.</p>
+      <a href="{{ url_for('index') }}" class="back-button">Go Back</a>
+    {% endif %}
+  </form>
+{% endblock %}

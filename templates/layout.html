@@ -1,0 +1,577 @@
+<!-- templates/layout.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Non Shady YouTube Video Downloader{% endblock %}</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+      position: relative;
+      z-index: 1;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      min-height: 100vh;
+    }
+    
+    #canvas-background {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .header a {
+      text-decoration: none;
+      color: #fff;
+    }
+    .header h1 {
+      font-size: 28px;
+      margin: 0;
+      padding: 15px;
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(5px);
+      color: #fff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+    .header h1:hover {
+      background-color: rgba(255, 255, 255, 0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    form {
+      margin-top: 20px;
+      background-color: rgba(255, 255, 255, 0.9);
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+    }
+    button, .back-button {
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #6e48aa, #9d50bb);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+    button:hover, .back-button:hover {
+      background: linear-gradient(135deg, #7e58ba, #ad60cb);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+    }
+    input[type="text"] {
+      padding: 12px;
+      width: 100%;
+      box-sizing: border-box;
+      margin-bottom: 20px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 16px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+      transition: all 0.3s;
+    }
+    input[type="text"]:focus {
+      border-color: #9d50bb;
+      box-shadow: 0 2px 10px rgba(157, 80, 187, 0.2);
+      outline: none;
+    }
+    input[type="radio"] {
+      margin-right: 8px;
+      transform: scale(1.2);
+    }
+    label {
+      font-size: 16px;
+      margin-right: 20px;
+    }
+    h2 {
+      color: #333;
+      margin-top: 0;
+    }
+    .radio-group {
+      margin: 15px 0;
+    }
+    .option-container {
+      margin: 20px 0;
+    }
+    .option-item {
+      margin-bottom: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      transition: all 0.3s;
+      border: 1px solid #e9ecef;
+      background-color: rgba(255, 255, 255, 0.8);
+    }
+    .option-item:hover {
+      background-color: rgba(255, 255, 255, 0.95);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    .help-text {
+      color: #666;
+      font-style: italic;
+      margin-top: 0;
+    }
+    .content {
+      position: relative;
+      z-index: 2;
+    }
+    
+    /* Loading animation styles */
+    .loading-container {
+      background-color: rgba(255, 255, 255, 0.9);
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+      text-align: center;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    
+    .loading-title {
+      margin-top: 0;
+      color: #333;
+      font-size: 22px;
+    }
+    
+    .loading-status {
+      margin: 15px 0;
+      font-size: 16px;
+      color: #555;
+    }
+    
+    .progress-container {
+      width: 100%;
+      height: 20px;
+      background-color: rgba(0, 0, 0, 0.1);
+      border-radius: 10px;
+      margin: 20px 0;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #6e48aa, #9d50bb);
+      border-radius: 10px;
+      transition: width 0.3s ease;
+      width: 0%;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .progress-bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.4) 50%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      animation: shimmer 1.5s infinite;
+      transform: skewX(-20deg);
+    }
+    
+    @keyframes shimmer {
+      0% {
+        transform: translateX(-100%) skewX(-20deg);
+      }
+      100% {
+        transform: translateX(100%) skewX(-20deg);
+      }
+    }
+    
+    .loading-animation {
+      display: flex;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    
+    .loading-dot {
+      width: 12px;
+      height: 12px;
+      margin: 0 6px;
+      border-radius: 50%;
+      background-color: #6e48aa;
+      animation: pulse 1.5s infinite ease-in-out;
+    }
+    
+    .loading-dot:nth-child(2) {
+      animation-delay: 0.3s;
+    }
+    
+    .loading-dot:nth-child(3) {
+      animation-delay: 0.6s;
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(0.8);
+        opacity: 0.6;
+      }
+      50% {
+        transform: scale(1.2);
+        opacity: 1;
+      }
+    }
+    
+    .download-info {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 15px;
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    .error-message {
+      background-color: rgba(255, 235, 235, 0.9);
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 4px solid #e74c3c;
+    }
+    
+    .error-message p {
+      margin: 5px 0;
+      color: #c0392b;
+    }
+    
+    .button-container {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+    
+    #post-processing-message {
+      background-color: rgba(235, 245, 255, 0.9);
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 4px solid #3498db;
+    }
+    
+    #post-processing-message p {
+      margin: 5px 0;
+      color: #2980b9;
+    }
+    
+    /* Loading spinner for buttons */
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* GitHub button */
+    .github-button {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #333, #444);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      z-index: 10;
+    }
+    
+    .github-button:hover {
+      background: linear-gradient(135deg, #444, #555);
+      transform: translateX(-50%) translateY(-2px);
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+    }
+    
+    .github-button svg {
+      margin-right: 8px;
+      fill: white;
+    }
+    
+    /* Custom radio buttons */
+    .radio-option {
+      display: inline-block;
+      margin-right: 15px;
+      position: relative;
+    }
+    
+    .radio-option input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .radio-option label {
+      display: inline-block;
+      padding: 10px 20px;
+      background: rgba(110, 72, 170, 0.1);
+      border: 2px solid rgba(110, 72, 170, 0.2);
+      border-radius: 6px;
+      color: #333;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .radio-option input[type="radio"]:checked + label {
+      background: linear-gradient(135deg, #6e48aa, #9d50bb);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+    
+    .radio-option label:hover {
+      background: rgba(110, 72, 170, 0.2);
+      transform: translateY(-2px);
+    }
+    
+    .radio-option input[type="radio"]:checked + label:hover {
+      background: linear-gradient(135deg, #7e58ba, #ad60cb);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas-background"></canvas>
+  
+  <div class="header">
+    <a href="{{ url_for('index') }}">
+      <h1>Non Shady YouTube Video Downloader</h1>
+    </a>
+  </div>
+  
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
+  
+  <a href="https://github.com/lsb/youtube-downloader" class="github-button" target="_blank">
+    <svg height="20" width="20" viewBox="0 0 16 16" version="1.1">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+    </svg>
+    View on GitHub
+  </a>
+
+  <script>
+    // Smooth gradient background animation
+    const canvas = document.getElementById('canvas-background');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    let mouseX = 0, mouseY = 0;
+    
+    // Colors for the gradient
+    const colors = [
+      { r: 15, g: 12, b: 41 },    // Dark blue
+      { r: 111, g: 66, b: 193 },  // Purple
+      { r: 65, g: 88, b: 208 }    // Blue
+    ];
+    
+    // Gradient points that will follow the mouse
+    const gradientPoints = [
+      { x: 0, y: 0, targetX: 0, targetY: 0, color: colors[0] },
+      { x: 0, y: 0, targetX: 0, targetY: 0, color: colors[1] },
+      { x: 0, y: 0, targetX: 0, targetY: 0, color: colors[2] }
+    ];
+    
+    // Set initial mouse position to center of screen
+    mouseX = window.innerWidth / 2;
+    mouseY = window.innerHeight / 2;
+    
+    // Add automatic movement if no mouse activity
+    let lastMouseMoveTime = Date.now();
+    let autoMove = true;
+    let autoMoveAngle = 0;
+    let isHoveringBackground = false;
+    
+    // Resize canvas to fill window
+    function resizeCanvas() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Initialize gradient points positions
+      gradientPoints[0].x = width * 0.2;
+      gradientPoints[0].y = height * 0.2;
+      
+      gradientPoints[1].x = width * 0.5;
+      gradientPoints[1].y = height * 0.5;
+      
+      gradientPoints[2].x = width * 0.8;
+      gradientPoints[2].y = height * 0.8;
+    }
+    
+    // Check if mouse is over an interface element
+    function isMouseOverInterface(e) {
+      // Get the element under the mouse
+      const elementUnderMouse = document.elementFromPoint(e.clientX, e.clientY);
+      
+      // Check if it's part of the content or header
+      if (elementUnderMouse) {
+        // Check if the element or any of its parents have the class 'content' or 'header'
+        let currentElement = elementUnderMouse;
+        while (currentElement) {
+          if (currentElement.classList && 
+             (currentElement.classList.contains('content') || 
+              currentElement.classList.contains('header'))) {
+            return true;
+          }
+          currentElement = currentElement.parentElement;
+        }
+      }
+      
+      return false;
+    }
+    
+    // Update gradient points based on mouse position
+    function updateGradientPoints() {
+      // Check if we should use auto movement
+      const currentTime = Date.now();
+      if (currentTime - lastMouseMoveTime > 3000 || !isHoveringBackground) {
+        autoMove = true;
+      }
+      
+      if (autoMove) {
+        // Create circular motion
+        autoMoveAngle += 0.01;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.min(width, height) * 0.3;
+        
+        mouseX = centerX + Math.cos(autoMoveAngle) * radius;
+        mouseY = centerY + Math.sin(autoMoveAngle) * radius;
+      }
+      
+      // Calculate target positions based on mouse
+      gradientPoints[0].targetX = mouseX * 0.8;
+      gradientPoints[0].targetY = mouseY * 0.8;
+      
+      gradientPoints[1].targetX = width - mouseX * 0.6;
+      gradientPoints[1].targetY = height - mouseY * 0.6;
+      
+      gradientPoints[2].targetX = mouseX * 0.4;
+      gradientPoints[2].targetY = height - mouseY * 0.4;
+      
+      // Smoothly move points toward their targets
+      for (let i = 0; i < gradientPoints.length; i++) {
+        const point = gradientPoints[i];
+        point.x += (point.targetX - point.x) * 0.05;
+        point.y += (point.targetY - point.y) * 0.05;
+      }
+    }
+    
+    // Draw the gradient background
+    function drawGradient() {
+      ctx.clearRect(0, 0, width, height);
+      
+      // Fill with base color first
+      ctx.fillStyle = '#0f0c29';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Create radial gradients for each point
+      for (let i = 0; i < gradientPoints.length; i++) {
+        const point = gradientPoints[i];
+        const color = point.color;
+        
+        // Create radial gradient
+        const gradient = ctx.createRadialGradient(
+          point.x, point.y, 0,
+          point.x, point.y, Math.max(width, height) * 0.5
+        );
+        
+        gradient.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0.9)`);
+        gradient.addColorStop(0.5, `rgba(${color.r}, ${color.g}, ${color.b}, 0.3)`);
+        gradient.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
+        
+        // Draw gradient with blend mode
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+      }
+      
+      // Reset composite operation
+      ctx.globalCompositeOperation = 'source-over';
+      
+      // Add a subtle overlay gradient
+      const overlayGradient = ctx.createLinearGradient(0, 0, width, height);
+      overlayGradient.addColorStop(0, 'rgba(15, 12, 41, 0.2)');
+      overlayGradient.addColorStop(0.5, 'rgba(48, 43, 99, 0.1)');
+      overlayGradient.addColorStop(1, 'rgba(36, 36, 62, 0.2)');
+      
+      ctx.fillStyle = overlayGradient;
+      ctx.fillRect(0, 0, width, height);
+    }
+    
+    // Animation loop
+    function animate() {
+      updateGradientPoints();
+      drawGradient();
+      requestAnimationFrame(animate);
+    }
+    
+    // Track mouse position
+    document.addEventListener('mousemove', (e) => {
+      // Only update mouse position if not over interface elements
+      if (!isMouseOverInterface(e)) {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+        lastMouseMoveTime = Date.now();
+        autoMove = false;
+        isHoveringBackground = true;
+      } else {
+        isHoveringBackground = false;
+      }
+    });
+    
+    // Initialize
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    animate();
+  </script>
+</body>
+</html> 

@@ -1,0 +1,241 @@
+<!-- templates/download_progress.html -->
+{% extends "layout.html" %}
+
+{% block title %}Downloading - {{ title }}{% endblock %}
+
+{% block content %}
+  <div class="loading-container">
+    <h2 class="loading-title">Downloading {{ title }}</h2>
+    
+    <div class="loading-status" id="status-text">Preparing download...</div>
+    
+    <div class="progress-container">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    
+    <div class="download-info">
+      <span id="download-speed">Speed: --</span>
+      <span id="download-size">Size: --</span>
+      <span id="download-eta">ETA: --</span>
+    </div>
+    
+    <div class="loading-animation" id="loading-animation">
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+    </div>
+    
+    <div id="post-processing-message" class="hidden">
+      <p>Download complete! Now processing your file...</p>
+      <p>This may take a moment. Please wait while we prepare your file for download.</p>
+    </div>
+    
+    <div id="download-complete" class="hidden">
+      <p>Download complete! Your file will begin downloading automatically once processing is finished.</p>
+      <p>If the download doesn't start automatically, <a id="manual-download-link" href="#">click here</a> when the status shows "Download complete!"</p>
+    </div>
+    
+    <div id="download-error" class="error-message hidden">
+      <p>An error occurred during download. Please try again.</p>
+      <p id="error-details"></p>
+    </div>
+    
+    <div class="button-container">
+      <a href="{{ url_for('index') }}" class="back-button" id="cancel-button">Cancel</a>
+      <a id="retry-button" href="{{ url_for('index') }}" class="back-button hidden">Try Again</a>
+    </div>
+  </div>
+  
+  <script>
+    // Download progress simulation and tracking
+    const progressBar = document.getElementById('progress-bar');
+    const statusText = document.getElementById('status-text');
+    const downloadSpeed = document.getElementById('download-speed');
+    const downloadSize = document.getElementById('download-size');
+    const downloadEta = document.getElementById('download-eta');
+    const downloadComplete = document.getElementById('download-complete');
+    const downloadError = document.getElementById('download-error');
+    const errorDetails = document.getElementById('error-details');
+    const loadingAnimation = document.getElementById('loading-animation');
+    const manualDownloadLink = document.getElementById('manual-download-link');
+    const retryButton = document.getElementById('retry-button');
+    
+    // Download ID from server
+    const downloadId = "{{ download_id }}";
+    let downloadUrl = "";
+    let isCompleted = false; // Flag to track if download is already complete
+    let hasError = false; // Flag to track if an error occurred
+    let pollCount = 0; // Count how many times we've polled
+    let fileCheckInterval = null; // Interval for checking if file is ready
+    
+    // Function to check if file is ready for download
+    function checkFileReady(filename) {
+      fetch(`/check_file_ready/${filename}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.ready) {
+            console.log("File is now ready for download");
+            statusText.textContent = "File is ready for download!";
+            
+            // Hide post-processing message
+            document.getElementById('post-processing-message').classList.add('hidden');
+            
+            // Hide loading animation
+            loadingAnimation.classList.add('hidden');
+            
+            // Show completion message
+            downloadComplete.classList.remove('hidden');
+            
+            // Change Cancel button to Back button
+            const cancelButton = document.getElementById('cancel-button');
+            cancelButton.textContent = 'Back';
+            
+            // Trigger download if not already done
+            if (!hasError && isCompleted) {
+              window.location.href = downloadUrl;
+              
+              // Clear the interval
+              if (fileCheckInterval) {
+                clearInterval(fileCheckInterval);
+                fileCheckInterval = null;
+              }
+            }
+          } else {
+            console.log("File not ready yet:", data.reason);
+            statusText.textContent = `Processing: ${data.reason || 'Please wait...'}`;
+            
+            // Keep post-processing message visible
+            document.getElementById('post-processing-message').classList.remove('hidden');
+          }
+        })
+        .catch(error => {
+          console.error("Error checking file readiness:", error);
+        });
+    }
+    
+    // Update progress function
+    function updateProgress() {
+      // Don't update if already completed or has error
+      if (isCompleted || hasError) {
+        return;
+      }
+      
+      // Increment poll count
+      pollCount++;
+      
+      fetch(`/download_status/${downloadId}`)
+        .then(response => response.json())
+        .then(data => {
+          // Check for error in status
+          if (data.status && data.status.startsWith('Error:')) {
+            showError(data.status);
+            return;
+          }
+          
+          // Update progress bar (cap at 100%)
+          const progress = Math.min(data.progress, 100);
+          progressBar.style.width = `${progress}%`;
+          
+          // Update status text
+          statusText.textContent = data.status;
+          
+          // Update download info
+          downloadSpeed.textContent = `Speed: ${data.speed}`;
+          downloadSize.textContent = `Size: ${data.downloaded} / ${data.total_size}`;
+          downloadEta.textContent = `ETA: ${data.eta}`;
+          
+          // If we're in post-processing phase (95-99%), update the UI accordingly
+          if (progress >= 95 && progress < 100) {
+            // Hide speed and ETA as they're no longer relevant
+            downloadSpeed.textContent = 'Speed: --';
+            downloadEta.textContent = 'ETA: --';
+            
+            // Show post-processing message
+            document.getElementById('post-processing-message').classList.remove('hidden');
+          }
+          
+          // Check if download is complete
+          if (data.progress >= 100 && !isCompleted) {
+            isCompleted = true; // Set flag to prevent multiple completions
+            
+            // Extract filename from download URL
+            downloadUrl = data.download_url;
+            manualDownloadLink.href = downloadUrl;
+            const filename = downloadUrl.split('/').pop();
+            
+            // Change Cancel button to Back button
+            const cancelButton = document.getElementById('cancel-button');
+            cancelButton.textContent = 'Back';
+            
+            // Only auto download if file is ready
+            if (data.file_ready === true) {
+              console.log("File is ready, starting automatic download");
+              
+              // Hide post-processing message if shown
+              document.getElementById('post-processing-message').classList.add('hidden');
+              
+              // Hide loading animation
+              loadingAnimation.classList.add('hidden');
+              
+              // Show completion message
+              downloadComplete.classList.remove('hidden');
+              
+              setTimeout(() => {
+                window.location.href = downloadUrl;
+              }, 1500);
+            } else {
+              console.log("File is not ready yet, waiting for manual download");
+              statusText.textContent = "File is being processed. Please wait...";
+              
+              // Keep loading animation visible during processing
+              loadingAnimation.classList.remove('hidden');
+              
+              // Show post-processing message
+              document.getElementById('post-processing-message').classList.remove('hidden');
+              
+              // Start checking if file is ready every 2 seconds
+              fileCheckInterval = setInterval(() => {
+                checkFileReady(filename);
+              }, 2000);
+            }
+            
+            return;
+          }
+          
+          // Continue polling if not complete
+          if (!isCompleted) {
+            setTimeout(updateProgress, 500);
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching download status:', error);
+          
+          // If we've had too many errors or polls, show an error
+          if (pollCount > 60) { // 30 seconds (60 * 500ms)
+            showError('Download is taking too long. The server might be busy.');
+            return;
+          }
+          
+          // Continue polling even on error, unless already completed
+          if (!isCompleted && !hasError) {
+            setTimeout(updateProgress, 1000);
+          }
+        });
+    }
+    
+    // Show error message
+    function showError(message) {
+      hasError = true;
+      loadingAnimation.classList.add('hidden');
+      downloadError.classList.remove('hidden');
+      retryButton.classList.remove('hidden');
+      errorDetails.textContent = message;
+      statusText.textContent = 'Download failed';
+    }
+    
+    // Start progress tracking when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      updateProgress();
+    });
+  </script>
+{% endblock %} 

@@ -1,0 +1,42 @@
+<!-- templates/index.html -->
+{% extends "layout.html" %}
+
+{% block content %}
+  <form method="POST" id="download-form">
+    <h2>Download YouTube Videos</h2>
+    <p>Enter a YouTube link below:</p>
+    
+    {% if error %}
+    <div class="error-message">
+      <p>{{ error }}</p>
+    </div>
+    {% endif %}
+    
+    <input type="text" name="url" placeholder="Paste YouTube link here" required>
+    
+    <div class="radio-group">
+      <p>What would you like to download?</p>
+      
+      <div class="radio-option">
+        <input type="radio" name="format" value="video" id="video" checked> 
+        <label for="video">Video</label>
+      </div>
+      
+      <div class="radio-option">
+        <input type="radio" name="format" value="mp3" id="audio"> 
+        <label for="audio">Audio only</label>
+      </div>
+    </div>
+    
+    <button type="submit" id="submit-button">Continue</button>
+  </form>
+  
+  <script>
+    // Add loading effect to the continue button
+    document.getElementById('download-form').addEventListener('submit', function() {
+      const button = document.getElementById('submit-button');
+      button.innerHTML = '<span class="loading-spinner"></span> Processing...';
+      button.disabled = true;
+    });
+  </script>
+{% endblock %}
