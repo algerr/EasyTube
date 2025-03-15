@@ -143,16 +143,41 @@
     }
     .option-item {
       margin-bottom: 12px;
-      padding: 12px;
-      border-radius: 8px;
-      transition: all 0.3s;
-      border: 1px solid #e9ecef;
-      background-color: rgba(255, 255, 255, 0.8);
+      position: relative;
+      display: block;
     }
-    .option-item:hover {
-      background-color: rgba(255, 255, 255, 0.95);
+    .option-item input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .option-item label {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background: rgba(110, 72, 170, 0.1);
+      border: 2px solid rgba(110, 72, 170, 0.2);
+      border-radius: 6px;
+      color: #333;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-sizing: border-box;
+    }
+    .option-item input[type="radio"]:checked + label {
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      border: 2px solid #9d50bb;
+      box-shadow: 0 0 8px rgba(157, 80, 187, 0.5);
+    }
+    .option-item label:hover {
+      background: rgba(255, 255, 255, 0.8);
       transform: translateY(-2px);
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    .option-item input[type="radio"]:checked + label:hover {
+      background: rgba(255, 255, 255, 1);
     }
     .help-text {
       color: #666;

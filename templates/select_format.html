@@ -8,7 +8,7 @@
     <h2>{{ title }}</h2>
     
     {% if choices|length > 0 %}
-      <p>Select your preferred quality option:</p>
+      <p class="instruction-text">Select your preferred quality option:</p>
       <p class="help-text">Higher quality means better video/audio but larger file size.</p>
       
       <div class="option-container">
@@ -23,7 +23,7 @@
       <button type="submit" class="primary-button">Download</button>
     {% else %}
       <p>No download options available for this video. Please try another video.</p>
-      <a href="{{ url_for('index') }}" class="back-button">Go Back</a>
+      <a href="{{ url_for('index') }}" class="back-button secondary-button">Go Back</a>
     {% endif %}
   </form>
 {% endblock %}
