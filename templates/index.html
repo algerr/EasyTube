@@ -4,7 +4,7 @@
 {% block content %}
   <form method="POST" id="download-form">
     <h2>Download YouTube Videos</h2>
-    <p>Enter a YouTube link below:</p>
+    <p class="instruction-text">Enter a YouTube link below:</p>
     
     {% if error %}
     <div class="error-message">
@@ -15,7 +15,7 @@
     <input type="text" name="url" placeholder="Paste YouTube link here" required>
     
     <div class="radio-group">
-      <p>What would you like to download?</p>
+      <p class="instruction-text">What would you like to download?</p>
       
       <div class="radio-option">
         <input type="radio" name="format" value="video" id="video" checked> 
