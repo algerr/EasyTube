@@ -26,15 +26,38 @@ cd youtube-downloader
 
 2. Install the required dependencies:
 ```
-pip install flask yt-dlp
+pip install -r requirements.txt
 ```
 
-3. Run the application:
+## Running the Application
+
+### Using the Run Scripts
+
+#### On Unix/Linux/Mac:
+```
+./run.sh
+```
+
+#### On Windows:
+```
+run.bat
+```
+
+These scripts will:
+- Create a virtual environment if it doesn't exist
+- Install the required dependencies
+- Create the downloads directory if needed
+- Start the application
+
+### Manual Start
+
+If you prefer to start the application manually:
+
 ```
 python app.py
 ```
 
-4. Open your browser and navigate to `http://127.0.0.1:5000`
+Then open your browser and navigate to `http://127.0.0.1:5000`
 
 ## Usage
 
