@@ -47,34 +47,20 @@ else:
     app.logger.warning("No YouTube credentials found in environment variables")
     USE_YOUTUBE_AUTH = False
 
-if YOUTUBE_COOKIES:
-    app.logger.info("YouTube cookies found in environment variables")
+# Check for cookies file
+COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+if os.path.exists(COOKIES_FILE):
+    app.logger.info(f"YouTube cookies file found at {COOKIES_FILE}")
     USE_YOUTUBE_COOKIES = True
-else:
-    app.logger.warning("No YouTube cookies found in environment variables")
+elif YOUTUBE_COOKIES:
+    app.logger.info("YouTube cookies found in environment variables but will not be used")
     USE_YOUTUBE_COOKIES = False
-
-# Create a temporary cookies file when needed
-COOKIES_FILE = None
+else:
+    app.logger.warning("No YouTube cookies found")
+    USE_YOUTUBE_COOKIES = False
 
 # Store download progress information
 download_progress = {}
-
-# Function to create a temporary cookies file
-def get_cookies_file():
-    global COOKIES_FILE
-    if USE_YOUTUBE_COOKIES and not COOKIES_FILE:
-        try:
-            import tempfile
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.txt')
-            temp_file.write(YOUTUBE_COOKIES.encode('utf-8'))
-            temp_file.close()
-            COOKIES_FILE = temp_file.name
-            app.logger.info(f"Created temporary cookies file: {COOKIES_FILE}")
-        except Exception as e:
-            app.logger.error(f"Error creating temporary cookies file: {str(e)}")
-            COOKIES_FILE = None
-    return COOKIES_FILE
 
 # Check if yt-dlp command line is available
 try:
@@ -102,10 +88,9 @@ def get_video_info(url):
                 cmd = ["yt-dlp", "--dump-json"]
                 
                 # Add cookies if available (preferred method)
-                cookies_file = get_cookies_file()
-                if USE_YOUTUBE_COOKIES and cookies_file:
+                if USE_YOUTUBE_COOKIES and COOKIES_FILE:
                     app.logger.info("Using YouTube cookies for video info")
-                    cmd.extend(["--cookies", cookies_file])
+                    cmd.extend(["--cookies", COOKIES_FILE])
                 # Fall back to username/password if no cookies
                 elif USE_YOUTUBE_AUTH:
                     app.logger.info("Using YouTube authentication for video info")
@@ -169,11 +154,10 @@ def get_video_info(url):
         }
         
         # Add cookies if available (preferred method)
-        cookies_file = get_cookies_file()
-        if USE_YOUTUBE_COOKIES and cookies_file:
+        if USE_YOUTUBE_COOKIES and COOKIES_FILE:
             app.logger.info("Using YouTube cookies with Python library")
             ydl_opts.update({
-                'cookiefile': cookies_file,
+                'cookiefile': COOKIES_FILE,
             })
         # Fall back to username/password if no cookies
         elif USE_YOUTUBE_AUTH:
@@ -358,10 +342,9 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         cmd = ["yt-dlp", "--newline"]
         
         # Add cookies if available (preferred method)
-        cookies_file = get_cookies_file()
-        if USE_YOUTUBE_COOKIES and cookies_file:
+        if USE_YOUTUBE_COOKIES and COOKIES_FILE:
             app.logger.info("Using YouTube cookies for download")
-            cmd.extend(["--cookies", cookies_file])
+            cmd.extend(["--cookies", COOKIES_FILE])
         # Fall back to username/password if no cookies
         elif USE_YOUTUBE_AUTH:
             app.logger.info("Using YouTube authentication for download")
@@ -526,11 +509,10 @@ def download_with_python_lib(url, format_id, download_id, filename, format_mode,
         }
         
         # Add cookies if available (preferred method)
-        cookies_file = get_cookies_file()
-        if USE_YOUTUBE_COOKIES and cookies_file:
+        if USE_YOUTUBE_COOKIES and COOKIES_FILE:
             app.logger.info("Using YouTube cookies with Python library for download")
             ydl_opts.update({
-                'cookiefile': cookies_file,
+                'cookiefile': COOKIES_FILE,
             })
         # Fall back to username/password if no cookies
         elif USE_YOUTUBE_AUTH:
@@ -1094,7 +1076,7 @@ if __name__ == '__main__':
     
     # Log authentication methods available
     if USE_YOUTUBE_COOKIES:
-        app.logger.info("Using YouTube cookies from environment variable")
+        app.logger.info(f"Using YouTube cookies from file: {COOKIES_FILE}")
     elif USE_YOUTUBE_AUTH:
         app.logger.info("Using YouTube username/password authentication")
     else:
