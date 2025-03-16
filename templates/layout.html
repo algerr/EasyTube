@@ -4,7 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Non Shady YouTube Video Downloader{% endblock %}</title>
+  <title>{% block title %}EasyTube Downloader{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -213,6 +214,7 @@
       color: #555;
     }
     
+    /* Progress bar styles */
     .progress-container {
       width: 100%;
       height: 20px;
@@ -228,34 +230,29 @@
       background: linear-gradient(90deg, #6e48aa, #9d50bb);
       border-radius: 10px;
       transition: width 0.3s ease;
-      width: 0%;
+      width: 0%; /* Ensure initial width is set */
       position: relative;
       overflow: hidden;
     }
     
-    .progress-bar::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.4) 50%,
-        rgba(255, 255, 255, 0) 100%
-      );
-      animation: shimmer 1.5s infinite;
-      transform: skewX(-20deg);
+    /* Fix for progress bar animation */
+    .progress-bar-animated {
+      animation: progress-animation 1.5s linear infinite;
+      background-size: 200% 100%;
+      background-image: linear-gradient(90deg, 
+        #6e48aa 0%, 
+        #9d50bb 25%, 
+        #6e48aa 50%, 
+        #9d50bb 75%, 
+        #6e48aa 100%);
     }
     
-    @keyframes shimmer {
+    @keyframes progress-animation {
       0% {
-        transform: translateX(-100%) skewX(-20deg);
+        background-position: 0% 0;
       }
       100% {
-        transform: translateX(100%) skewX(-20deg);
+        background-position: 200% 0;
       }
     }
     
@@ -291,6 +288,22 @@
         transform: scale(1.2);
         opacity: 1;
       }
+    }
+    
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
     
     .download-info {
@@ -335,23 +348,6 @@
     #post-processing-message p {
       margin: 5px 0;
       color: #2980b9;
-    }
-    
-    /* Loading spinner for buttons */
-    .loading-spinner {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-radius: 50%;
-      border-top-color: #fff;
-      animation: spin 1s ease-in-out infinite;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    
-    @keyframes spin {
-      to { transform: rotate(360deg); }
     }
     
     /* GitHub button */
@@ -435,7 +431,7 @@
   
   <div class="header">
     <a href="{{ url_for('index') }}">
-      <h1>Non Shady YouTube Video Downloader</h1>
+      <h1>EasyTube Downloader</h1>
     </a>
   </div>
   

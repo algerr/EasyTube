@@ -10,7 +10,7 @@
     <div class="loading-status" id="status-text">Preparing download...</div>
     
     <div class="progress-container">
-      <div class="progress-bar" id="progress-bar"></div>
+      <div class="progress-bar progress-bar-animated" id="progress-bar" style="width: 0%;"></div>
     </div>
     
     <div class="download-info">
@@ -59,6 +59,7 @@
     const loadingAnimation = document.getElementById('loading-animation');
     const manualDownloadLink = document.getElementById('manual-download-link');
     const retryButton = document.getElementById('retry-button');
+    const cancelButton = document.getElementById('cancel-button');
     
     // Download ID from server
     const downloadId = "{{ download_id }}";
@@ -67,6 +68,8 @@
     let hasError = false; // Flag to track if an error occurred
     let pollCount = 0; // Count how many times we've polled
     let fileCheckInterval = null; // Interval for checking if file is ready
+    let lastProgress = 0; // Track the last progress value to prevent going backwards
+    let isDownloaded = false; // Flag to track if file has been downloaded
     
     // Function to check if file is ready for download
     function checkFileReady(filename) {
@@ -87,11 +90,15 @@
             downloadComplete.classList.remove('hidden');
             
             // Change Cancel button to Back button
-            const cancelButton = document.getElementById('cancel-button');
             cancelButton.textContent = 'Back';
             
             // Trigger download if not already done
-            if (!hasError && isCompleted) {
+            if (!hasError && isCompleted && !isDownloaded) {
+              isDownloaded = true;
+              
+              // Mark the file for cleanup after download
+              markForCleanup();
+              
               window.location.href = downloadUrl;
               
               // Clear the interval
@@ -113,6 +120,41 @@
         });
     }
     
+    // Function to mark file for cleanup
+    function markForCleanup() {
+      fetch(`/mark_for_cleanup/${downloadId}`)
+        .then(response => response.json())
+        .then(data => {
+          console.log("Marked for cleanup:", data);
+        })
+        .catch(error => {
+          console.error("Error marking for cleanup:", error);
+        });
+    }
+    
+    // Function to cancel download
+    function cancelDownload() {
+      // Cancel the download regardless of status
+      fetch(`/cancel_download/${downloadId}`, {
+        method: 'GET',
+        keepalive: true // Ensure request completes even if page is unloading
+      })
+        .then(response => response.json())
+        .then(data => {
+          console.log("Download cancelled:", data);
+          // Redirect to index page
+          window.location.href = "{{ url_for('index') }}";
+        })
+        .catch(error => {
+          console.error("Error cancelling download:", error);
+          // Redirect anyway
+          window.location.href = "{{ url_for('index') }}";
+        });
+      
+      // Prevent default link behavior
+      return false;
+    }
+    
     // Update progress function
     function updateProgress() {
       // Don't update if already completed or has error
@@ -132,31 +174,39 @@
             return;
           }
           
-          // Update progress bar (cap at 100%)
-          const progress = Math.min(data.progress, 100);
-          progressBar.style.width = `${progress}%`;
+          // Check if download was cancelled
+          if (data.status === 'Cancelled' || data.cancelled === true) {
+            window.location.href = "{{ url_for('index') }}";
+            return;
+          }
+          
+          // Update progress bar (cap at 100% and never decrease)
+          const progress = Math.min(data.progress || 0, 100);
+          
+          // Only update if the new progress is higher than the last progress
+          if (progress > lastProgress) {
+            console.log(`Progress update: ${progress.toFixed(1)}% (was ${lastProgress.toFixed(1)}%)`); // Debug log
+            progressBar.style.width = `${progress}%`;
+            lastProgress = progress; // Update last progress
+            
+            // If progress is complete, remove the animated class
+            if (progress >= 100) {
+              progressBar.classList.remove('progress-bar-animated');
+            }
+          }
           
           // Update status text
-          statusText.textContent = data.status;
+          statusText.textContent = data.status || 'Downloading...';
           
-          // Update download info
-          downloadSpeed.textContent = `Speed: ${data.speed}`;
-          downloadSize.textContent = `Size: ${data.downloaded} / ${data.total_size}`;
-          downloadEta.textContent = `ETA: ${data.eta}`;
-          
-          // If we're in post-processing phase (95-99%), update the UI accordingly
-          if (progress >= 95 && progress < 100) {
-            // Hide speed and ETA as they're no longer relevant
-            downloadSpeed.textContent = 'Speed: --';
-            downloadEta.textContent = 'ETA: --';
-            
-            // Show post-processing message
-            document.getElementById('post-processing-message').classList.remove('hidden');
-          }
+          // Update download info - simplified to avoid size calculation issues
+          downloadSpeed.textContent = `Speed: ${data.speed || '--'}`;
+          downloadSize.textContent = `Progress: ${progress.toFixed(1)}%`;
+          downloadEta.textContent = `ETA: ${data.eta || '--'}`;
           
           // Check if download is complete
           if (data.progress >= 100 && !isCompleted) {
             isCompleted = true; // Set flag to prevent multiple completions
+            console.log('Download complete!'); // Debug log
             
             // Extract filename from download URL
             downloadUrl = data.download_url;
@@ -164,7 +214,6 @@
             const filename = downloadUrl.split('/').pop();
             
             // Change Cancel button to Back button
-            const cancelButton = document.getElementById('cancel-button');
             cancelButton.textContent = 'Back';
             
             // Only auto download if file is ready
@@ -180,7 +229,11 @@
               // Show completion message
               downloadComplete.classList.remove('hidden');
               
+              // Mark the file for cleanup after download
+              markForCleanup();
+              
               setTimeout(() => {
+                isDownloaded = true;
                 window.location.href = downloadUrl;
               }, 1500);
             } else {
@@ -233,8 +286,52 @@
       statusText.textContent = 'Download failed';
     }
     
-    // Start progress tracking when page loads
+    // Set up event listeners
     document.addEventListener('DOMContentLoaded', () => {
+      // Set initial progress bar width to 0%
+      progressBar.style.width = '0%';
+      // Add the animated class
+      progressBar.classList.add('progress-bar-animated');
+      
+      // Set up cancel button - always use cancelDownload for Cancel button
+      cancelButton.addEventListener('click', function(e) {
+        // If button text is "Back" (after download), just mark for cleanup
+        if (cancelButton.textContent === 'Back') {
+          markForCleanup();
+          return true; // Allow normal navigation
+        } else {
+          // Otherwise cancel the download
+          e.preventDefault();
+          cancelDownload();
+          return false;
+        }
+      });
+      
+      // Set up manual download link
+      manualDownloadLink.addEventListener('click', function() {
+        isDownloaded = true;
+        markForCleanup();
+      });
+      
+      // Handle page unload
+      window.addEventListener('beforeunload', function(e) {
+        // Always try to clean up when page is closed/refreshed
+        if (isCompleted && isDownloaded) {
+          // If download is complete and downloaded, mark for cleanup
+          fetch(`/mark_for_cleanup/${downloadId}`, {
+            method: 'GET',
+            keepalive: true
+          });
+        } else {
+          // Otherwise cancel the download
+          fetch(`/cancel_download/${downloadId}`, { 
+            method: 'GET',
+            keepalive: true 
+          });
+        }
+      });
+      
+      // Start progress tracking
       updateProgress();
     });
   </script>
