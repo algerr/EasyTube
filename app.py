@@ -96,6 +96,16 @@ def get_video_info(url):
                     app.logger.info("Using YouTube authentication for video info")
                     cmd.extend(["--username", YOUTUBE_USERNAME, "--password", YOUTUBE_PASSWORD])
                 
+                # Add options to bypass YouTube restrictions
+                cmd.extend([
+                    "--extractor-retries", "5",       # Retry extraction 5 times
+                    "--fragment-retries", "10",       # Retry fragments 10 times
+                    "--retry-sleep", "5",             # Sleep 5 seconds between retries
+                    "--skip-unavailable-fragments",   # Skip unavailable fragments
+                    "--no-check-certificates",        # Don't check certificates
+                    "--geo-bypass",                   # Try to bypass geo-restrictions
+                ])
+                
                 # Add the URL
                 cmd.append(url)
                 
@@ -151,6 +161,16 @@ def get_video_info(url):
             'skip_download': True,
             'format': 'best',
             'noplaylist': True,
+            
+            # Add options to bypass YouTube restrictions
+            'extractor_retries': 5,           # Retry extraction 5 times
+            'fragment_retries': 10,           # Retry fragments 10 times
+            'retry_sleep': 5,                 # Sleep 5 seconds between retries
+            'skip_unavailable_fragments': True, # Skip unavailable fragments
+            'no_check_certificates': True,    # Don't check certificates
+            'geo_bypass': True,               # Try to bypass geo-restrictions
+            'socket_timeout': 30,             # Increase socket timeout
+            'nocheckcertificate': True,       # Don't check certificates (alternative option)
         }
         
         # Add cookies if available (preferred method)
@@ -219,7 +239,10 @@ def extract_format_choices(formats, mode):
         valid_audio_formats = [af for af in audio_formats if af.get("filesize") and af.get("format_id")]
         
         if not valid_audio_formats:
-            return choices
+            # If no valid formats with filesize, try to use any audio format
+            valid_audio_formats = [af for af in audio_formats if af.get("format_id")]
+            if not valid_audio_formats:
+                return choices
             
         # Sort by filesize (which correlates with quality)
         sorted_audio = sorted(valid_audio_formats, key=lambda x: x.get("filesize", 0))
@@ -227,7 +250,7 @@ def extract_format_choices(formats, mode):
         # Get the best quality (largest file size) - show this first
         if len(sorted_audio) > 1:
             best = sorted_audio[-1]
-            best_size_mb = round(best["filesize"] / (1024 * 1024), 2)
+            best_size_mb = round(best.get("filesize", 0) / (1024 * 1024), 2) if best.get("filesize") else "Unknown"
             choices.append({
                 "id": best["format_id"],
                 "label": f"Audio | High Quality | {best_size_mb}MB"
@@ -236,11 +259,20 @@ def extract_format_choices(formats, mode):
         # Get the worst quality (smallest file size) - show this second
         if sorted_audio:
             worst = sorted_audio[0]
-            worst_size_mb = round(worst["filesize"] / (1024 * 1024), 2)
+            worst_size_mb = round(worst.get("filesize", 0) / (1024 * 1024), 2) if worst.get("filesize") else "Unknown"
             choices.append({
                 "id": worst["format_id"],
                 "label": f"Audio | Low Quality | {worst_size_mb}MB"
             })
+        
+        # Add a fallback option using the best audio format
+        if audio_formats:
+            best_audio = max(audio_formats, key=lambda a: a.get("abr", 0), default=None)
+            if best_audio and best_audio.get("format_id") and not any(c["id"] == best_audio["format_id"] for c in choices):
+                choices.append({
+                    "id": best_audio["format_id"],
+                    "label": f"Audio | Fallback Option | Size Unknown"
+                })
         
         return choices
 
@@ -257,24 +289,38 @@ def extract_format_choices(formats, mode):
 
     best_audio = max(audio_formats, key=lambda a: a.get("filesize", 0), default=None)
     if not best_audio:
+        best_audio = max(audio_formats, key=lambda a: a.get("abr", 0), default=None)
+    
+    if not best_audio:
         return choices
 
     resolution_map = {}
     for vf in video_formats:
-        if not vf.get("filesize") or not vf.get("format_id"):
+        if not vf.get("format_id"):
             continue
+            
         height = vf.get("height")
         if not height:
             continue
+            
         res = f"{height}p"
-        total_size = vf.get("filesize", 0) + best_audio.get("filesize", 0)
+        
+        # Calculate total size if available
+        if vf.get("filesize") and best_audio.get("filesize"):
+            total_size = vf.get("filesize", 0) + best_audio.get("filesize", 0)
+            size_mb = round(total_size / (1024 * 1024), 2)
+        else:
+            total_size = 0
+            size_mb = "Unknown"
+            
         if res not in resolution_map or total_size > resolution_map[res]["total_size"]:
             resolution_map[res] = {
                 "id": f"{vf['format_id']}+{best_audio['format_id']}",
-                "label": f"Video | {res} | {round(total_size / (1024 * 1024), 2)}MB",
+                "label": f"Video | {res} | {size_mb}MB",
                 "total_size": total_size,
                 "height": height,
-                "ext": vf.get("ext", "mp4")  # Default to mp4 if not specified
+                "ext": vf.get("ext", "mp4"),  # Default to mp4 if not specified
+                "format_id": vf['format_id']
             }
 
     # Add user-friendly quality descriptions to video options
@@ -282,7 +328,7 @@ def extract_format_choices(formats, mode):
     for res in sorted(resolution_map.keys(), key=extract_resolution_number, reverse=True):
         entry = resolution_map[res]
         height = entry.get("height", 0)
-        size_mb = round(entry["total_size"] / (1024 * 1024), 2)
+        size_mb = round(entry["total_size"] / (1024 * 1024), 2) if entry["total_size"] > 0 else "Unknown"
         
         # Add quality description based on resolution
         quality_desc = ""
@@ -303,6 +349,25 @@ def extract_format_choices(formats, mode):
             label = f"Video | {quality_desc} ({res}) | {size_mb}MB"
             
         formatted_choices.append({"id": entry["id"], "label": label})
+    
+    # Add a fallback option using the best video format directly
+    if video_formats:
+        best_video = max(video_formats, key=lambda v: v.get("height", 0), default=None)
+        if best_video and best_video.get("format_id") and best_audio and best_audio.get("format_id"):
+            fallback_id = f"{best_video['format_id']}+{best_audio['format_id']}"
+            if not any(c["id"] == fallback_id for c in formatted_choices):
+                height = best_video.get("height", 0)
+                quality_desc = "High Quality" if height >= 1080 else "Medium Quality" if height >= 720 else "Standard Quality"
+                formatted_choices.append({
+                    "id": fallback_id,
+                    "label": f"Video | {quality_desc} ({height}p) | Fallback Option"
+                })
+    
+    # Add a simple format option that's less likely to be restricted
+    formatted_choices.append({
+        "id": "best[height<=720]",
+        "label": "Video | Medium Quality | Most Reliable Option"
+    })
     
     return formatted_choices
 
@@ -328,9 +393,36 @@ def download_video_with_progress(url, format_id, download_id, filename, format_m
             
     except Exception as e:
         app.logger.error(f"Download error: {str(e)}", exc_info=True)
+        
+        # Update download progress with error information
         download_progress[download_id]['status'] = f'Error: {str(e)}'
         download_progress[download_id]['error'] = str(e)
-        raise
+        download_progress[download_id]['progress'] = 0
+        
+        # Check for specific error types and provide user-friendly messages
+        error_msg = str(e).lower()
+        
+        if "anti-bot protection" in error_msg or "sign in to confirm" in error_msg:
+            user_message = "YouTube's anti-bot protection is blocking this download. Try refreshing your cookies or downloading from your local computer."
+        elif "cookie file" in error_msg:
+            user_message = "There was an issue with your cookie file. Make sure it's in the correct Netscape format and is not expired."
+        elif "format not available" in error_msg:
+            user_message = "The requested video format is not available. Please try a different format."
+        elif "http error 403: forbidden" in error_msg:
+            user_message = "YouTube is blocking this download (HTTP 403 Forbidden). This usually happens when YouTube's API restrictions are in place. Try using a different format or try again later."
+        elif "precondition check failed" in error_msg:
+            user_message = "YouTube API returned 'Precondition check failed'. This usually indicates that your cookies are expired or the selected format is currently restricted. Try refreshing your cookies or selecting a different format."
+        elif "throttling" in error_msg:
+            user_message = "YouTube is throttling this download. Try selecting a different format or try again later."
+        elif "network error" in error_msg or "connection" in error_msg:
+            user_message = "A network error occurred. Please check your internet connection and try again."
+        elif "permission" in error_msg:
+            user_message = "Permission error. The application doesn't have permission to write to the download folder."
+        else:
+            user_message = f"Download failed: {str(e)}"
+        
+        download_progress[download_id]['user_message'] = user_message
+        raise Exception(user_message)
 
 def download_with_subprocess(url, format_id, download_id, filename, format_mode, output_template):
     """Download using subprocess call to yt-dlp command line"""
@@ -362,6 +454,16 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         else:
             # For video, ensure the output is always MP4
             cmd.extend(["--merge-output-format", "mp4"])
+            
+        # Add options to bypass YouTube restrictions
+        cmd.extend([
+            "--extractor-retries", "5",       # Retry extraction 5 times
+            "--fragment-retries", "10",       # Retry fragments 10 times
+            "--retry-sleep", "5",             # Sleep 5 seconds between retries
+            "--skip-unavailable-fragments",   # Skip unavailable fragments
+            "--no-check-certificates",        # Don't check certificates
+            "--geo-bypass",                   # Try to bypass geo-restrictions
+        ])
         
         # Add the URL
         cmd.append(url)
@@ -392,9 +494,15 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         
         # Process output line by line to update progress
         final_output_path = None
+        error_lines = []
         for line in process.stdout:
             line = line.strip()
             app.logger.debug(f"yt-dlp output: {line}")
+            
+            # Collect error messages
+            if "ERROR:" in line or "WARNING:" in line:
+                error_lines.append(line)
+                app.logger.error(f"yt-dlp error/warning: {line}")
             
             # Update progress based on output
             if "[download]" in line and "%" in line:
@@ -447,12 +555,55 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         
         # Check if process completed successfully
         if process.returncode != 0:
-            raise Exception(f"yt-dlp process failed with return code {process.returncode}")
+            error_message = "Unknown error"
+            if error_lines:
+                error_message = "; ".join(error_lines)
+            
+            # Check for specific error patterns
+            if any("Sign in to confirm you're not a bot" in line for line in error_lines):
+                if USE_YOUTUBE_COOKIES:
+                    app.logger.error("Anti-bot protection triggered despite cookies")
+                    error_message = "YouTube anti-bot protection triggered despite using cookies. Your cookies may be expired or invalid."
+                elif USE_YOUTUBE_AUTH:
+                    app.logger.error("Anti-bot protection triggered despite authentication")
+                    error_message = "YouTube anti-bot protection triggered despite using authentication."
+                else:
+                    error_message = "YouTube is blocking this request due to anti-bot protection. Try using cookies or authentication."
+            
+            # Check for cookie-related errors
+            elif any("Cookie file" in line for line in error_lines) and USE_YOUTUBE_COOKIES:
+                app.logger.error("Cookie file error detected")
+                error_message = "There was an error with the cookie file. Make sure it's in the correct Netscape format."
+            
+            # Check for format-related errors
+            elif any("requested format not available" in line.lower() for line in error_lines):
+                app.logger.error("Format not available error detected")
+                error_message = "The requested video format is not available. Try a different format."
+                
+            # Check for HTTP 403 Forbidden errors
+            elif any("HTTP Error 403: Forbidden" in line for line in error_lines):
+                app.logger.error("HTTP 403 Forbidden error detected")
+                error_message = "YouTube is blocking this download (HTTP 403 Forbidden). This usually happens when YouTube's API restrictions are in place. Try using a different format or try again later."
+                
+            # Check for Precondition check failed errors
+            elif any("Precondition check failed" in line for line in error_lines):
+                app.logger.error("Precondition check failed error detected")
+                error_message = "YouTube API returned 'Precondition check failed'. This usually indicates that your cookies are expired or the selected format is currently restricted. Try refreshing your cookies or selecting a different format."
+                
+            # Check for throttling warnings
+            elif any("throttling" in line.lower() for line in error_lines):
+                app.logger.error("Throttling warning detected")
+                error_message = "YouTube is throttling this download. Try selecting a different format or try again later."
+            
+            app.logger.error(f"yt-dlp process failed with return code {process.returncode}: {error_message}")
+            raise Exception(f"yt-dlp process failed: {error_message}")
         
         return find_and_process_output_file(download_id, base_filename, output_template, is_audio)
         
     except Exception as e:
         app.logger.error(f"Subprocess download error: {str(e)}", exc_info=True)
+        download_progress[download_id]['status'] = f'Error: {str(e)}'
+        download_progress[download_id]['error'] = str(e)
         raise
 
 def download_with_python_lib(url, format_id, download_id, filename, format_mode, output_template):
@@ -498,6 +649,12 @@ def download_with_python_lib(url, format_id, download_id, filename, format_mode,
             elif d['status'] == 'finished':
                 download_progress[download_id]['status'] = 'Post-processing...'
                 download_progress[download_id]['progress'] = 95
+            
+            elif d['status'] == 'error':
+                error_msg = d.get('error', 'Unknown error')
+                app.logger.error(f"Error in download: {error_msg}")
+                download_progress[download_id]['status'] = f'Error: {error_msg}'
+                download_progress[download_id]['error'] = error_msg
         
         # Configure yt-dlp options
         ydl_opts = {
@@ -506,6 +663,17 @@ def download_with_python_lib(url, format_id, download_id, filename, format_mode,
             'progress_hooks': [progress_callback],
             'quiet': False,
             'no_warnings': False,
+            'verbose': True,  # Enable verbose output for better error messages
+            
+            # Add options to bypass YouTube restrictions
+            'extractor_retries': 5,           # Retry extraction 5 times
+            'fragment_retries': 10,           # Retry fragments 10 times
+            'retry_sleep': 5,                 # Sleep 5 seconds between retries
+            'skip_unavailable_fragments': True, # Skip unavailable fragments
+            'no_check_certificates': True,    # Don't check certificates
+            'geo_bypass': True,               # Try to bypass geo-restrictions
+            'socket_timeout': 30,             # Increase socket timeout
+            'nocheckcertificate': True,       # Don't check certificates (alternative option)
         }
         
         # Add cookies if available (preferred method)
@@ -539,8 +707,72 @@ def download_with_python_lib(url, format_id, download_id, filename, format_mode,
         
         # Start the download
         app.logger.info(f"Starting yt-dlp Python library download with options: {ydl_opts}")
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except yt_dlp.utils.DownloadError as e:
+            error_str = str(e)
+            app.logger.error(f"yt-dlp download error: {error_str}")
+            
+            # Check for specific error patterns
+            if "Sign in to confirm you're not a bot" in error_str:
+                if USE_YOUTUBE_COOKIES:
+                    app.logger.error("Anti-bot protection triggered despite cookies")
+                    error_message = "YouTube anti-bot protection triggered despite using cookies. Your cookies may be expired or invalid."
+                elif USE_YOUTUBE_AUTH:
+                    app.logger.error("Anti-bot protection triggered despite authentication")
+                    error_message = "YouTube anti-bot protection triggered despite using authentication."
+                else:
+                    error_message = "YouTube is blocking this request due to anti-bot protection. Try using cookies or authentication."
+                
+                download_progress[download_id]['status'] = f'Error: {error_message}'
+                download_progress[download_id]['error'] = error_message
+                raise Exception(error_message)
+            
+            # Check for cookie-related errors
+            elif "Cookie file" in error_str and USE_YOUTUBE_COOKIES:
+                app.logger.error("Cookie file error detected")
+                error_message = "There was an error with the cookie file. Make sure it's in the correct Netscape format."
+                download_progress[download_id]['status'] = f'Error: {error_message}'
+                download_progress[download_id]['error'] = error_message
+                raise Exception(error_message)
+            
+            # Check for format-related errors
+            elif "requested format not available" in error_str.lower():
+                app.logger.error("Format not available error detected")
+                error_message = "The requested video format is not available. Try a different format."
+                download_progress[download_id]['status'] = f'Error: {error_message}'
+                download_progress[download_id]['error'] = error_message
+                raise Exception(error_message)
+            
+            # Check for HTTP 403 Forbidden errors
+            elif "HTTP Error 403: Forbidden" in error_str:
+                app.logger.error("HTTP 403 Forbidden error detected")
+                error_message = "YouTube is blocking this download (HTTP 403 Forbidden). This usually happens when YouTube's API restrictions are in place. Try using a different format or try again later."
+                download_progress[download_id]['status'] = f'Error: {error_message}'
+                download_progress[download_id]['error'] = error_message
+                raise Exception(error_message)
+            
+            # Check for Precondition check failed errors
+            elif "Precondition check failed" in error_str:
+                app.logger.error("Precondition check failed error detected")
+                error_message = "YouTube API returned 'Precondition check failed'. This usually indicates that your cookies are expired or the selected format is currently restricted. Try refreshing your cookies or selecting a different format."
+                download_progress[download_id]['status'] = f'Error: {error_message}'
+                download_progress[download_id]['error'] = error_message
+                raise Exception(error_message)
+            
+            # Check for throttling warnings
+            elif "throttling" in error_str.lower():
+                app.logger.error("Throttling warning detected")
+                error_message = "YouTube is throttling this download. Try selecting a different format or try again later."
+                download_progress[download_id]['status'] = f'Error: {error_message}'
+                download_progress[download_id]['error'] = error_message
+                raise Exception(error_message)
+            
+            # Re-raise with the original error message
+            download_progress[download_id]['status'] = f'Error: {error_str}'
+            download_progress[download_id]['error'] = error_str
+            raise Exception(f"yt-dlp download failed: {error_str}")
         
         download_progress[download_id]['status'] = 'Finalizing...'
         download_progress[download_id]['progress'] = 99
@@ -549,6 +781,8 @@ def download_with_python_lib(url, format_id, download_id, filename, format_mode,
         
     except Exception as e:
         app.logger.error(f"Python library download error: {str(e)}", exc_info=True)
+        download_progress[download_id]['status'] = f'Error: {str(e)}'
+        download_progress[download_id]['error'] = str(e)
         raise
 
 def find_and_process_output_file(download_id, base_filename, output_template, is_audio):

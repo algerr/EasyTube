@@ -170,7 +170,7 @@
         .then(data => {
           // Check for error in status
           if (data.status && data.status.startsWith('Error:')) {
-            showError(data.status);
+            showError(data.user_message || data.status);
             return;
           }
           
@@ -282,8 +282,20 @@
       loadingAnimation.classList.add('hidden');
       downloadError.classList.remove('hidden');
       retryButton.classList.remove('hidden');
-      errorDetails.textContent = message;
+      
+      // Format the error message to be more user-friendly
+      let displayMessage = message;
+      if (message.startsWith('Error:')) {
+        displayMessage = message.substring(7); // Remove "Error: " prefix
+      }
+      
+      errorDetails.textContent = displayMessage;
       statusText.textContent = 'Download failed';
+      
+      // Update progress bar to show error state
+      progressBar.style.width = '100%';
+      progressBar.classList.remove('progress-bar-animated');
+      progressBar.classList.add('progress-bar-error');
     }
     
     // Set up event listeners
