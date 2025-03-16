@@ -37,6 +37,7 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 # Get YouTube credentials from environment variables
 YOUTUBE_USERNAME = os.environ.get('YOUTUBE_USERNAME')
 YOUTUBE_PASSWORD = os.environ.get('YOUTUBE_PASSWORD')
+YOUTUBE_COOKIES = os.environ.get('YOUTUBE_COOKIES')
 
 # Log if credentials are available (without revealing them)
 if YOUTUBE_USERNAME and YOUTUBE_PASSWORD:
@@ -45,6 +46,25 @@ if YOUTUBE_USERNAME and YOUTUBE_PASSWORD:
 else:
     app.logger.warning("No YouTube credentials found in environment variables")
     USE_YOUTUBE_AUTH = False
+
+if YOUTUBE_COOKIES:
+    app.logger.info("YouTube cookies found in environment variables")
+    USE_YOUTUBE_COOKIES = True
+else:
+    app.logger.warning("No YouTube cookies found in environment variables")
+    USE_YOUTUBE_COOKIES = False
+
+# Create cookies file if cookies are provided
+COOKIES_FILE = None
+if USE_YOUTUBE_COOKIES:
+    try:
+        COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "youtube_cookies.txt")
+        with open(COOKIES_FILE, "w") as f:
+            f.write(YOUTUBE_COOKIES)
+        app.logger.info(f"YouTube cookies written to {COOKIES_FILE}")
+    except Exception as e:
+        app.logger.error(f"Error writing cookies file: {str(e)}")
+        COOKIES_FILE = None
 
 # Store download progress information
 download_progress = {}
@@ -74,8 +94,12 @@ def get_video_info(url):
                 # Prepare command with authentication if available
                 cmd = ["yt-dlp", "--dump-json"]
                 
-                # Add authentication if credentials are available
-                if USE_YOUTUBE_AUTH:
+                # Add cookies if available (preferred method)
+                if USE_YOUTUBE_COOKIES and COOKIES_FILE:
+                    app.logger.info("Using YouTube cookies for video info")
+                    cmd.extend(["--cookies", COOKIES_FILE])
+                # Fall back to username/password if no cookies
+                elif USE_YOUTUBE_AUTH:
                     app.logger.info("Using YouTube authentication for video info")
                     cmd.extend(["--username", YOUTUBE_USERNAME, "--password", YOUTUBE_PASSWORD])
                 
@@ -98,7 +122,9 @@ def get_video_info(url):
                     app.logger.error(f"Error fetching video info via subprocess: {error_message}")
                     # Check for anti-bot protection message
                     if "Sign in to confirm you're not a bot" in error_message:
-                        if USE_YOUTUBE_AUTH:
+                        if USE_YOUTUBE_COOKIES:
+                            app.logger.error("Anti-bot protection triggered despite cookies")
+                        elif USE_YOUTUBE_AUTH:
                             app.logger.error("Anti-bot protection triggered despite authentication")
                         raise Exception("YouTube is blocking this request due to anti-bot protection. Try downloading from your local computer instead of the cloud service.")
                     # Fall back to Python library
@@ -134,8 +160,14 @@ def get_video_info(url):
             'noplaylist': True,
         }
         
-        # Add authentication if credentials are available
-        if USE_YOUTUBE_AUTH:
+        # Add cookies if available (preferred method)
+        if USE_YOUTUBE_COOKIES and COOKIES_FILE:
+            app.logger.info("Using YouTube cookies with Python library")
+            ydl_opts.update({
+                'cookiefile': COOKIES_FILE,
+            })
+        # Fall back to username/password if no cookies
+        elif USE_YOUTUBE_AUTH:
             app.logger.info("Using YouTube authentication with Python library")
             ydl_opts.update({
                 'username': YOUTUBE_USERNAME,
@@ -153,7 +185,9 @@ def get_video_info(url):
             
             # Check for anti-bot protection message
             if "Sign in to confirm you're not a bot" in error_str:
-                if USE_YOUTUBE_AUTH:
+                if USE_YOUTUBE_COOKIES:
+                    app.logger.error("Anti-bot protection triggered despite cookies")
+                elif USE_YOUTUBE_AUTH:
                     app.logger.error("Anti-bot protection triggered despite authentication")
                 raise Exception("YouTube is blocking this request due to anti-bot protection. Try downloading from your local computer instead of the cloud service.")
             
@@ -314,8 +348,12 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         # Build the yt-dlp command
         cmd = ["yt-dlp", "--newline"]
         
-        # Add authentication if credentials are available
-        if USE_YOUTUBE_AUTH:
+        # Add cookies if available (preferred method)
+        if USE_YOUTUBE_COOKIES and COOKIES_FILE:
+            app.logger.info("Using YouTube cookies for download")
+            cmd.extend(["--cookies", COOKIES_FILE])
+        # Fall back to username/password if no cookies
+        elif USE_YOUTUBE_AUTH:
             app.logger.info("Using YouTube authentication for download")
             cmd.extend(["--username", YOUTUBE_USERNAME, "--password", YOUTUBE_PASSWORD])
         
@@ -473,8 +511,14 @@ def download_with_python_lib(url, format_id, download_id, filename, format_mode,
             'no_warnings': False,
         }
         
-        # Add authentication if credentials are available
-        if USE_YOUTUBE_AUTH:
+        # Add cookies if available (preferred method)
+        if USE_YOUTUBE_COOKIES and COOKIES_FILE:
+            app.logger.info("Using YouTube cookies with Python library for download")
+            ydl_opts.update({
+                'cookiefile': COOKIES_FILE,
+            })
+        # Fall back to username/password if no cookies
+        elif USE_YOUTUBE_AUTH:
             app.logger.info("Using YouTube authentication with Python library for download")
             ydl_opts.update({
                 'username': YOUTUBE_USERNAME,
