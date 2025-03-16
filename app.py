@@ -375,12 +375,16 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         
         # Log the command (without credentials)
         safe_cmd = cmd.copy()
-        if USE_YOUTUBE_AUTH:
+        if USE_YOUTUBE_AUTH and "--username" in safe_cmd:
             # Replace username and password with asterisks in the log
-            username_index = safe_cmd.index("--username")
-            password_index = safe_cmd.index("--password")
-            safe_cmd[username_index + 1] = "********"
-            safe_cmd[password_index + 1] = "********"
+            try:
+                username_index = safe_cmd.index("--username")
+                password_index = safe_cmd.index("--password")
+                safe_cmd[username_index + 1] = "********"
+                safe_cmd[password_index + 1] = "********"
+            except ValueError:
+                # If for some reason the indexes aren't found, just continue
+                pass
         app.logger.info(f"Running command: {' '.join(safe_cmd)}")
         
         # Start the process
@@ -1076,4 +1080,13 @@ def check_ytdlp():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.logger.info(f"Starting server on port {port}")
+    
+    # Log authentication methods available
+    if USE_YOUTUBE_COOKIES and COOKIES_FILE:
+        app.logger.info(f"Using YouTube cookies from file: {COOKIES_FILE}")
+    elif USE_YOUTUBE_AUTH:
+        app.logger.info("Using YouTube username/password authentication")
+    else:
+        app.logger.warning("No YouTube authentication methods available")
+    
     app.run(host="0.0.0.0", port=port, debug=True)
