@@ -33,13 +33,83 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 # Store download progress information
 download_progress = {}
 
+# Check if yt-dlp command line is available
+try:
+    result = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, timeout=5)
+    if result.returncode == 0:
+        app.logger.info(f"yt-dlp command line is available, version: {result.stdout.strip()}")
+        USE_YTDLP_COMMAND = True
+    else:
+        app.logger.warning("yt-dlp command line returned non-zero exit code, falling back to Python library")
+        USE_YTDLP_COMMAND = False
+except Exception as e:
+    app.logger.warning(f"yt-dlp command line is not available: {str(e)}")
+    USE_YTDLP_COMMAND = False
+
+app.logger.info(f"Using yt-dlp command line: {USE_YTDLP_COMMAND}")
+
 def get_video_info(url):
-    result = subprocess.run(
-        ["yt-dlp", "--dump-json", url], capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise Exception("Error fetching video info")
-    return json.loads(result.stdout)
+    try:
+        app.logger.info(f"Fetching video info for URL: {url}")
+        
+        # Check if we should use the command line version
+        if USE_YTDLP_COMMAND:
+            try:
+                # Add a timeout to prevent hanging
+                result = subprocess.run(
+                    ["yt-dlp", "--dump-json", url], 
+                    capture_output=True, 
+                    text=True,
+                    timeout=60  # 60 second timeout
+                )
+                
+                # Log the command result
+                app.logger.info(f"yt-dlp command exit code: {result.returncode}")
+                
+                if result.returncode != 0:
+                    error_message = result.stderr.strip() if result.stderr else "Unknown error"
+                    app.logger.error(f"Error fetching video info via subprocess: {error_message}")
+                    # Fall back to Python library
+                else:
+                    # Check if output is empty
+                    if not result.stdout.strip():
+                        app.logger.error("Empty response from yt-dlp subprocess")
+                        # Fall back to Python library
+                    else:
+                        # Try to parse the JSON
+                        try:
+                            video_info = json.loads(result.stdout)
+                            app.logger.info(f"Successfully fetched info for video via subprocess: {video_info.get('title', 'Unknown')}")
+                            return video_info
+                        except json.JSONDecodeError as e:
+                            app.logger.error(f"Failed to parse JSON response from subprocess: {e}")
+                            app.logger.error(f"Raw response: {result.stdout[:200]}...")  # Log first 200 chars
+                            # Fall back to Python library
+            except subprocess.TimeoutExpired:
+                app.logger.error("yt-dlp subprocess command timed out")
+                # Fall back to Python library
+            except Exception as e:
+                app.logger.error(f"Error using yt-dlp subprocess: {str(e)}", exc_info=True)
+                # Fall back to Python library
+        
+        # Use the Python library directly
+        app.logger.info("Using yt-dlp Python library")
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'format': 'best',
+            'noplaylist': True,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            video_info = ydl.extract_info(url, download=False)
+            app.logger.info(f"Successfully fetched info for video via Python library: {video_info.get('title', 'Unknown')}")
+            return video_info
+            
+    except Exception as e:
+        app.logger.error(f"All methods failed to fetch video info: {str(e)}", exc_info=True)
+        raise Exception(f"Error fetching video info: {str(e)}")
 
 def extract_resolution_number(res):
     if isinstance(res, str):
@@ -153,7 +223,7 @@ def extract_format_choices(formats, mode):
     return formatted_choices
 
 def download_video_with_progress(url, format_id, download_id, filename, format_mode):
-    """Download video with progress tracking using direct subprocess call to yt-dlp"""
+    """Download video with progress tracking using direct subprocess call to yt-dlp or Python library"""
     try:
         # Determine output format and path
         is_audio = format_mode == "mp3"
@@ -163,6 +233,26 @@ def download_video_with_progress(url, format_id, download_id, filename, format_m
         # Update status to starting
         download_progress[download_id]['status'] = 'Starting download...'
         app.logger.info(f"Starting download for {download_id}: {url} with format {format_id}")
+        
+        # Choose download method based on availability
+        if USE_YTDLP_COMMAND:
+            app.logger.info(f"Using yt-dlp command line for download")
+            return download_with_subprocess(url, format_id, download_id, filename, format_mode, output_template)
+        else:
+            app.logger.info(f"Using yt-dlp Python library for download")
+            return download_with_python_lib(url, format_id, download_id, filename, format_mode, output_template)
+            
+    except Exception as e:
+        app.logger.error(f"Download error: {str(e)}", exc_info=True)
+        download_progress[download_id]['status'] = f'Error: {str(e)}'
+        download_progress[download_id]['error'] = str(e)
+        raise
+
+def download_with_subprocess(url, format_id, download_id, filename, format_mode, output_template):
+    """Download using subprocess call to yt-dlp command line"""
+    try:
+        is_audio = format_mode == "mp3"
+        base_filename = os.path.splitext(filename)[0]
         
         # Build the yt-dlp command
         cmd = ["yt-dlp", "--newline"]
@@ -255,83 +345,171 @@ def download_video_with_progress(url, format_id, download_id, filename, format_m
         if process.returncode != 0:
             raise Exception(f"yt-dlp process failed with return code {process.returncode}")
         
-        # Find the output file
-        if is_audio:
-            # For audio, check for .mp3 file
-            expected_mp3 = os.path.join(DOWNLOAD_FOLDER, f"{base_filename}.mp3")
-            if os.path.exists(expected_mp3):
-                final_output_path = expected_mp3
-            elif final_output_path and os.path.exists(final_output_path):
-                # Use the path extracted from output
-                pass
-            else:
-                # Try to find any file with the same base name
-                possible_files = [f for f in os.listdir(DOWNLOAD_FOLDER) 
-                                if f.startswith(base_filename) and os.path.isfile(os.path.join(DOWNLOAD_FOLDER, f))]
-                if possible_files:
-                    final_output_path = os.path.join(DOWNLOAD_FOLDER, possible_files[0])
-                    app.logger.info(f"Found alternative file: {final_output_path}")
-                else:
-                    raise Exception("Could not find downloaded file")
-        else:
-            # For video, check for the original filename
-            expected_mp4 = os.path.join(DOWNLOAD_FOLDER, f"{base_filename}.mp4")
-            if os.path.exists(expected_mp4):
-                final_output_path = expected_mp4
-            elif os.path.exists(output_template):
-                final_output_path = output_template
-            else:
-                # Try to find any file with the same base name
-                possible_files = [f for f in os.listdir(DOWNLOAD_FOLDER) 
-                                if f.startswith(base_filename) and os.path.isfile(os.path.join(DOWNLOAD_FOLDER, f))]
-                if possible_files:
-                    # Prefer .mp4 files if available
-                    mp4_files = [f for f in possible_files if f.endswith('.mp4')]
-                    if mp4_files:
-                        final_output_path = os.path.join(DOWNLOAD_FOLDER, mp4_files[0])
-                    else:
-                        final_output_path = os.path.join(DOWNLOAD_FOLDER, possible_files[0])
-                    app.logger.info(f"Found alternative file: {final_output_path}")
-                else:
-                    raise Exception("Could not find downloaded file")
-        
-        # Verify file exists and has content
-        if not final_output_path or not os.path.exists(final_output_path):
-            raise Exception(f"File not found after download")
-        
-        # For video files, ensure the extension is .mp4
-        if not is_audio and not final_output_path.endswith('.mp4'):
-            # Rename the file to have .mp4 extension
-            new_path = os.path.splitext(final_output_path)[0] + '.mp4'
-            try:
-                os.rename(final_output_path, new_path)
-                app.logger.info(f"Renamed file from {final_output_path} to {new_path}")
-                final_output_path = new_path
-            except Exception as e:
-                app.logger.error(f"Error renaming file to .mp4: {str(e)}")
-        
-        file_size = os.path.getsize(final_output_path)
-        if file_size == 0:
-            raise Exception(f"Downloaded file is empty: {final_output_path}")
-        
-        # Update download progress with final information
-        download_progress[download_id]['status'] = 'Download complete!'
-        download_progress[download_id]['progress'] = 100
-        download_progress[download_id]['file_ready'] = True
-        download_progress[download_id]['file_path'] = final_output_path
-        download_progress[download_id]['filename'] = os.path.basename(final_output_path)
-        download_progress[download_id]['download_url'] = f'/download_file/{os.path.basename(final_output_path)}'
-        
-        # Log success
-        app.logger.info(f"Download successful: {final_output_path}, Size: {file_size} bytes")
-        
-        return final_output_path
+        return find_and_process_output_file(download_id, base_filename, output_template, is_audio)
         
     except Exception as e:
-        app.logger.error(f"Download error: {str(e)}", exc_info=True)
-        download_progress[download_id]['status'] = f'Error: {str(e)}'
-        download_progress[download_id]['error'] = str(e)
+        app.logger.error(f"Subprocess download error: {str(e)}", exc_info=True)
         raise
+
+def download_with_python_lib(url, format_id, download_id, filename, format_mode, output_template):
+    """Download using yt-dlp Python library"""
+    try:
+        is_audio = format_mode == "mp3"
+        base_filename = os.path.splitext(filename)[0]
+        
+        # Create a progress hook that updates our progress tracking
+        def progress_callback(d):
+            if d['status'] == 'downloading':
+                try:
+                    if 'downloaded_bytes' in d and 'total_bytes' in d and d['total_bytes'] > 0:
+                        percent = (d['downloaded_bytes'] / d['total_bytes']) * 100
+                        download_progress[download_id]['progress'] = percent
+                        download_progress[download_id]['status'] = 'Downloading...'
+                        
+                        # Update speed if available
+                        if 'speed' in d and d['speed']:
+                            speed_bps = d['speed']
+                            if speed_bps < 1024:
+                                speed_str = f"{speed_bps:.2f} B/s"
+                            elif speed_bps < 1024 * 1024:
+                                speed_str = f"{speed_bps / 1024:.2f} KiB/s"
+                            else:
+                                speed_str = f"{speed_bps / (1024 * 1024):.2f} MiB/s"
+                            download_progress[download_id]['speed'] = speed_str
+                        
+                        # Update ETA if available
+                        if 'eta' in d and d['eta']:
+                            minutes, seconds = divmod(d['eta'], 60)
+                            download_progress[download_id]['eta'] = f"{minutes:02d}:{seconds:02d}"
+                        
+                        # Update file size info
+                        if 'downloaded_bytes' in d and 'total_bytes' in d:
+                            downloaded = format_file_size(d['downloaded_bytes'])
+                            total = format_file_size(d['total_bytes'])
+                            download_progress[download_id]['downloaded'] = downloaded
+                            download_progress[download_id]['total_size'] = total
+                except Exception as e:
+                    app.logger.error(f"Error in progress callback: {str(e)}")
+            
+            elif d['status'] == 'finished':
+                download_progress[download_id]['status'] = 'Post-processing...'
+                download_progress[download_id]['progress'] = 95
+        
+        # Configure yt-dlp options
+        ydl_opts = {
+            'format': format_id,
+            'outtmpl': output_template,
+            'progress_hooks': [progress_callback],
+            'quiet': False,
+            'no_warnings': False,
+        }
+        
+        # Add post-processing for audio if needed
+        if is_audio:
+            ydl_opts.update({
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+            })
+        else:
+            # For video, ensure the output is always MP4
+            ydl_opts.update({
+                'merge_output_format': 'mp4',
+            })
+        
+        # Start the download
+        app.logger.info(f"Starting yt-dlp Python library download with options: {ydl_opts}")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        
+        download_progress[download_id]['status'] = 'Finalizing...'
+        download_progress[download_id]['progress'] = 99
+        
+        return find_and_process_output_file(download_id, base_filename, output_template, is_audio)
+        
+    except Exception as e:
+        app.logger.error(f"Python library download error: {str(e)}", exc_info=True)
+        raise
+
+def find_and_process_output_file(download_id, base_filename, output_template, is_audio):
+    """Find and process the downloaded file"""
+    # Find the output file
+    final_output_path = None
+    
+    if is_audio:
+        # For audio, check for .mp3 file
+        expected_mp3 = os.path.join(DOWNLOAD_FOLDER, f"{base_filename}.mp3")
+        if os.path.exists(expected_mp3):
+            final_output_path = expected_mp3
+        else:
+            # Try to find any file with the same base name
+            possible_files = [f for f in os.listdir(DOWNLOAD_FOLDER) 
+                            if f.startswith(base_filename) and os.path.isfile(os.path.join(DOWNLOAD_FOLDER, f))]
+            if possible_files:
+                # Prefer .mp3 files if available
+                mp3_files = [f for f in possible_files if f.endswith('.mp3')]
+                if mp3_files:
+                    final_output_path = os.path.join(DOWNLOAD_FOLDER, mp3_files[0])
+                else:
+                    final_output_path = os.path.join(DOWNLOAD_FOLDER, possible_files[0])
+                app.logger.info(f"Found alternative audio file: {final_output_path}")
+            else:
+                raise Exception("Could not find downloaded audio file")
+    else:
+        # For video, check for the original filename
+        expected_mp4 = os.path.join(DOWNLOAD_FOLDER, f"{base_filename}.mp4")
+        if os.path.exists(expected_mp4):
+            final_output_path = expected_mp4
+        elif os.path.exists(output_template):
+            final_output_path = output_template
+        else:
+            # Try to find any file with the same base name
+            possible_files = [f for f in os.listdir(DOWNLOAD_FOLDER) 
+                            if f.startswith(base_filename) and os.path.isfile(os.path.join(DOWNLOAD_FOLDER, f))]
+            if possible_files:
+                # Prefer .mp4 files if available
+                mp4_files = [f for f in possible_files if f.endswith('.mp4')]
+                if mp4_files:
+                    final_output_path = os.path.join(DOWNLOAD_FOLDER, mp4_files[0])
+                else:
+                    final_output_path = os.path.join(DOWNLOAD_FOLDER, possible_files[0])
+                app.logger.info(f"Found alternative video file: {final_output_path}")
+            else:
+                raise Exception("Could not find downloaded video file")
+    
+    # Verify file exists and has content
+    if not final_output_path or not os.path.exists(final_output_path):
+        raise Exception(f"File not found after download")
+    
+    # For video files, ensure the extension is .mp4
+    if not is_audio and not final_output_path.endswith('.mp4'):
+        # Rename the file to have .mp4 extension
+        new_path = os.path.splitext(final_output_path)[0] + '.mp4'
+        try:
+            os.rename(final_output_path, new_path)
+            app.logger.info(f"Renamed file from {final_output_path} to {new_path}")
+            final_output_path = new_path
+        except Exception as e:
+            app.logger.error(f"Error renaming file to .mp4: {str(e)}")
+    
+    file_size = os.path.getsize(final_output_path)
+    if file_size == 0:
+        raise Exception(f"Downloaded file is empty: {final_output_path}")
+    
+    # Update download progress with final information
+    download_progress[download_id]['status'] = 'Download complete!'
+    download_progress[download_id]['progress'] = 100
+    download_progress[download_id]['file_ready'] = True
+    download_progress[download_id]['file_path'] = final_output_path
+    download_progress[download_id]['filename'] = os.path.basename(final_output_path)
+    download_progress[download_id]['download_url'] = f'/download_file/{os.path.basename(final_output_path)}'
+    
+    # Log success
+    app.logger.info(f"Download successful: {final_output_path}, Size: {file_size} bytes")
+    
+    return final_output_path
 
 def update_progress_from_output(download_id, line):
     """Update download progress based on yt-dlp output line."""
@@ -776,4 +954,5 @@ def check_ytdlp():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.logger.info(f"Starting server on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=True)
