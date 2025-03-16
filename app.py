@@ -14,6 +14,10 @@ import yt_dlp
 import logging
 from datetime import timedelta
 import traceback
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +33,18 @@ app.secret_key = os.urandom(24)
 app.logger.setLevel(logging.INFO)
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+# Get YouTube credentials from environment variables
+YOUTUBE_USERNAME = os.environ.get('YOUTUBE_USERNAME')
+YOUTUBE_PASSWORD = os.environ.get('YOUTUBE_PASSWORD')
+
+# Log if credentials are available (without revealing them)
+if YOUTUBE_USERNAME and YOUTUBE_PASSWORD:
+    app.logger.info("YouTube credentials found in environment variables")
+    USE_YOUTUBE_AUTH = True
+else:
+    app.logger.warning("No YouTube credentials found in environment variables")
+    USE_YOUTUBE_AUTH = False
 
 # Store download progress information
 download_progress = {}
@@ -55,9 +71,20 @@ def get_video_info(url):
         # Check if we should use the command line version
         if USE_YTDLP_COMMAND:
             try:
+                # Prepare command with authentication if available
+                cmd = ["yt-dlp", "--dump-json"]
+                
+                # Add authentication if credentials are available
+                if USE_YOUTUBE_AUTH:
+                    app.logger.info("Using YouTube authentication for video info")
+                    cmd.extend(["--username", YOUTUBE_USERNAME, "--password", YOUTUBE_PASSWORD])
+                
+                # Add the URL
+                cmd.append(url)
+                
                 # Add a timeout to prevent hanging
                 result = subprocess.run(
-                    ["yt-dlp", "--dump-json", url], 
+                    cmd, 
                     capture_output=True, 
                     text=True,
                     timeout=60  # 60 second timeout
@@ -69,6 +96,11 @@ def get_video_info(url):
                 if result.returncode != 0:
                     error_message = result.stderr.strip() if result.stderr else "Unknown error"
                     app.logger.error(f"Error fetching video info via subprocess: {error_message}")
+                    # Check for anti-bot protection message
+                    if "Sign in to confirm you're not a bot" in error_message:
+                        if USE_YOUTUBE_AUTH:
+                            app.logger.error("Anti-bot protection triggered despite authentication")
+                        raise Exception("YouTube is blocking this request due to anti-bot protection. Try downloading from your local computer instead of the cloud service.")
                     # Fall back to Python library
                 else:
                     # Check if output is empty
@@ -102,14 +134,39 @@ def get_video_info(url):
             'noplaylist': True,
         }
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            video_info = ydl.extract_info(url, download=False)
-            app.logger.info(f"Successfully fetched info for video via Python library: {video_info.get('title', 'Unknown')}")
-            return video_info
+        # Add authentication if credentials are available
+        if USE_YOUTUBE_AUTH:
+            app.logger.info("Using YouTube authentication with Python library")
+            ydl_opts.update({
+                'username': YOUTUBE_USERNAME,
+                'password': YOUTUBE_PASSWORD,
+            })
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                video_info = ydl.extract_info(url, download=False)
+                app.logger.info(f"Successfully fetched info for video via Python library: {video_info.get('title', 'Unknown')}")
+                return video_info
+        except yt_dlp.utils.DownloadError as e:
+            error_str = str(e)
+            app.logger.error(f"yt-dlp download error: {error_str}")
+            
+            # Check for anti-bot protection message
+            if "Sign in to confirm you're not a bot" in error_str:
+                if USE_YOUTUBE_AUTH:
+                    app.logger.error("Anti-bot protection triggered despite authentication")
+                raise Exception("YouTube is blocking this request due to anti-bot protection. Try downloading from your local computer instead of the cloud service.")
+            
+            # Re-raise the original exception with more context
+            raise Exception(f"Error fetching video info: {error_str}")
             
     except Exception as e:
         app.logger.error(f"All methods failed to fetch video info: {str(e)}", exc_info=True)
-        raise Exception(f"Error fetching video info: {str(e)}")
+        # Check if this is already our custom message
+        if "YouTube is blocking this request due to anti-bot protection" in str(e):
+            raise
+        else:
+            raise Exception(f"Error fetching video info: {str(e)}")
 
 def extract_resolution_number(res):
     if isinstance(res, str):
@@ -257,6 +314,11 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         # Build the yt-dlp command
         cmd = ["yt-dlp", "--newline"]
         
+        # Add authentication if credentials are available
+        if USE_YOUTUBE_AUTH:
+            app.logger.info("Using YouTube authentication for download")
+            cmd.extend(["--username", YOUTUBE_USERNAME, "--password", YOUTUBE_PASSWORD])
+        
         # Add format selection
         cmd.extend(["--format", format_id])
         
@@ -273,8 +335,15 @@ def download_with_subprocess(url, format_id, download_id, filename, format_mode,
         # Add the URL
         cmd.append(url)
         
-        # Log the command
-        app.logger.info(f"Running command: {' '.join(cmd)}")
+        # Log the command (without credentials)
+        safe_cmd = cmd.copy()
+        if USE_YOUTUBE_AUTH:
+            # Replace username and password with asterisks in the log
+            username_index = safe_cmd.index("--username")
+            password_index = safe_cmd.index("--password")
+            safe_cmd[username_index + 1] = "********"
+            safe_cmd[password_index + 1] = "********"
+        app.logger.info(f"Running command: {' '.join(safe_cmd)}")
         
         # Start the process
         process = subprocess.Popen(
@@ -403,6 +472,14 @@ def download_with_python_lib(url, format_id, download_id, filename, format_mode,
             'quiet': False,
             'no_warnings': False,
         }
+        
+        # Add authentication if credentials are available
+        if USE_YOUTUBE_AUTH:
+            app.logger.info("Using YouTube authentication with Python library for download")
+            ydl_opts.update({
+                'username': YOUTUBE_USERNAME,
+                'password': YOUTUBE_PASSWORD,
+            })
         
         # Add post-processing for audio if needed
         if is_audio:
@@ -955,4 +1032,4 @@ def check_ytdlp():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.logger.info(f"Starting server on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(port=port, debug=True)
